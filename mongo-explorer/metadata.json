@@ -1,0 +1,4 @@
+{
+  "name": "Mongo C4 Explorer",
+  "description": "An elegant viewer for MongoDB cluster scans using the C4 model abstraction layers."
+}
