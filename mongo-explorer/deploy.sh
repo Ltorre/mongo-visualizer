@@ -80,9 +80,24 @@ fi
 if [ "${CREATE_CF:-false}" = "true" ] || [ -n "${DISTRIBUTION_ID:-}" ]; then
   # Create distribution if requested and not provided
   if [ -z "${DISTRIBUTION_ID:-}" ] && [ "${CREATE_CF:-false}" = "true" ]; then
-    echo "Creating CloudFront distribution for origin: $BUCKET.s3.amazonaws.com"
-    TMP_JSON="/tmp/cf-distribution-$$.json"
+    echo "Preparing CloudFront distribution for origin: $BUCKET.s3.amazonaws.com"
 
+    # Optionally create an Origin Access Identity (OAI) so the bucket can remain private
+    if [ "${CREATE_OAI:-true}" = "true" ]; then
+      echo "Creating CloudFront Origin Access Identity (OAI)"
+      OAI_JSON=$(aws cloudfront create-cloud-front-origin-access-identity \
+        --cloud-front-origin-access-identity-config CallerReference="$(date +%s)-$$",Comment="OAI for $BUCKET" $PROFILE_ARG \
+        --output json 2>/dev/null || true)
+      if [ -n "$OAI_JSON" ]; then
+        OAI_ID=$(echo "$OAI_JSON" | awk -F '"' '/Id/ {print $4; exit}')
+        OAI_S3CANON=$(echo "$OAI_JSON" | awk -F '"' '/S3CanonicalUserId/ {print $4; exit}')
+        echo "Created OAI: $OAI_ID (s3 canonical id: ${OAI_S3CANON:-unknown})"
+      else
+        echo "Failed to create OAI or it already exists; attempting to continue"
+      fi
+    fi
+
+    TMP_JSON="/tmp/cf-distribution-$$.json"
     cat > "$TMP_JSON" <<EOF
 {
   "CallerReference": "mongo-explorer-$(date +%s)-$$",
@@ -94,7 +109,7 @@ if [ "${CREATE_CF:-false}" = "true" ] || [ -n "${DISTRIBUTION_ID:-}" ]; then
       {
         "Id": "$BUCKET-origin",
         "DomainName": "$BUCKET.s3.amazonaws.com",
-        "S3OriginConfig": { "OriginAccessIdentity": "" }
+        "S3OriginConfig": { "OriginAccessIdentity": "origin-access-identity/cloudfront/$OAI_ID" }
       }
     ]
   },
@@ -108,10 +123,7 @@ if [ "${CREATE_CF:-false}" = "true" ] || [ -n "${DISTRIBUTION_ID:-}" ]; then
 }
 EOF
 
-    # If CERT_ARN provided, patch the viewer certificate into a separate file and call create-distribution with it.
     if [ -n "${CERT_ARN:-}" ]; then
-      # Use temporary jq-free approach: create a wrapper JSON with ViewerCertificate and merge using aws cli parameter
-      # aws cli expects full distribution-config; we'll append ViewerCertificate by inserting before final }
       TMP_JSON2="/tmp/cf-distribution-cert-$$.json"
       head -n -1 "$TMP_JSON" > "$TMP_JSON2"
       cat >> "$TMP_JSON2" <<EOF
@@ -129,6 +141,28 @@ EOF
     DIST_DOMAIN=$(aws cloudfront get-distribution --id "$DIST_ID" $PROFILE_ARG --query 'Distribution.DomainName' --output text)
     echo "Created CloudFront distribution: $DIST_ID ($DIST_DOMAIN)"
     DISTRIBUTION_ID="$DIST_ID"
+
+    # If we created an OAI, set a restrictive bucket policy granting access only to that canonical user
+    if [ -n "${OAI_S3CANON:-}" ]; then
+      echo "Applying bucket policy to allow access from OAI canonical user"
+      POLICY_JSON=$(cat <<POLICY
+{
+  "Version":"2012-10-17",
+  "Statement":[
+    {
+      "Sid":"AllowCloudFrontServicePrincipal",
+      "Effect":"Allow",
+      "Principal": { "CanonicalUser": "$OAI_S3CANON" },
+      "Action":["s3:GetObject"],
+      "Resource":["arn:aws:s3:::$BUCKET/*"]
+    }
+  ]
+}
+POLICY
+)
+      aws s3api put-bucket-policy --bucket "$BUCKET" --policy "$POLICY_JSON" $PROFILE_ARG
+    fi
+
     rm -f "$TMP_JSON"
   fi
 
