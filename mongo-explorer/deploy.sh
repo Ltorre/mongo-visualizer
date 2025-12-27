@@ -21,6 +21,13 @@ APP_DIR="$BASE_DIR"
 REGION="${REGION:-us-east-1}"
 BUILD_DIR="${BUILD_DIR:-dist}"
 
+# WAF settings (only used with CloudFront)
+# Set CREATE_WAF=true to create a WAF Web ACL that allows only the IPs in ALLOWED_IPS
+CREATE_WAF="${CREATE_WAF:-false}"
+ALLOWED_IPS="${ALLOWED_IPS:-}"
+WAF_NAME="${WAF_NAME:-mongo-explorer-web-acl}"
+IPSET_NAME="${IPSET_NAME:-mongo-explorer-allowed-ips}"
+
 PROFILE_ARG=""
 if [ -n "${AWS_PROFILE:-}" ]; then
   PROFILE_ARG="--profile ${AWS_PROFILE}"
@@ -161,6 +168,52 @@ EOF
 POLICY
 )
       aws s3api put-bucket-policy --bucket "$BUCKET" --policy "$POLICY_JSON" $PROFILE_ARG
+    fi
+
+    # Optionally create a WAF Web ACL and associate it with the CloudFront distribution
+    if [ "${CREATE_WAF}" = "true" ]; then
+      if [ -z "${ALLOWED_IPS}" ]; then
+        echo "ERROR: CREATE_WAF=true but ALLOWED_IPS is empty. Set ALLOWED_IPS='88.1.2.3/32 4.5.6.7/32'"
+        exit 3
+      fi
+
+      echo "Creating WAF IP set and Web ACL in us-east-1 for CloudFront"
+      AWS_WAF_REGION=us-east-1
+      ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text $PROFILE_ARG)
+
+      # create ip set
+      IP_ADDR_LIST=($ALLOWED_IPS)
+      echo "IP set addresses: ${IP_ADDR_LIST[*]}"
+      IPSET_ARN=$(aws wafv2 create-ip-set --name "$IPSET_NAME" --scope CLOUDFRONT --ip-address-version IPV4 --addresses ${IP_ADDR_LIST[*]} --description "Allowed IPs for mongo-explorer" --region $AWS_WAF_REGION $PROFILE_ARG --query 'Summary.ARN' --output text)
+      echo "Created IP set: $IPSET_ARN"
+
+      # create web ACL with a single allow rule referencing the ip set, default block
+      WEB_ACL_JSON=$(cat <<WACL
+{
+  "Name": "$WAF_NAME",
+  "Scope": "CLOUDFRONT",
+  "DefaultAction": {"Block": {}},
+  "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "$WAF_NAME"},
+  "Rules": [
+    {
+      "Name": "AllowSpecificIPs",
+      "Priority": 0,
+      "Statement": {"IPSetReferenceStatement": {"ARN": "$IPSET_ARN"}},
+      "Action": {"Allow": {}},
+      "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "AllowSpecificIPs"}
+    }
+  ]
+}
+WACL
+)
+
+      WEB_ACL_ARN=$(aws wafv2 create-web-acl --cli-input-json "$WEB_ACL_JSON" --region $AWS_WAF_REGION $PROFILE_ARG --query 'Summary.ARN' --output text)
+      echo "Created Web ACL: $WEB_ACL_ARN"
+
+      # associate web acl with the distribution
+      CF_RESOURCE_ARN="arn:aws:cloudfront::$ACCOUNT_ID:distribution/$DISTRIBUTION_ID"
+      aws wafv2 associate-web-acl --web-acl-arn "$WEB_ACL_ARN" --resource-arn "$CF_RESOURCE_ARN" --region $AWS_WAF_REGION $PROFILE_ARG
+      echo "Associated Web ACL with CloudFront distribution $DISTRIBUTION_ID"
     fi
 
     rm -f "$TMP_JSON"
