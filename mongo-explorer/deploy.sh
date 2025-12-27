@@ -19,7 +19,22 @@ set -euo pipefail
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$BASE_DIR"
 REGION="${REGION:-us-east-1}"
-BUILD_DIR="${BUILD_DIR:-dist}"
+BUILD_DIR_ENV="${BUILD_DIR:-}"
+
+# Detect build output directory if not provided via BUILD_DIR
+if [ -n "$BUILD_DIR_ENV" ]; then
+  BUILD_DIR="$BUILD_DIR_ENV"
+else
+  # common Vite/CRA output folders
+  for candidate in dist build out; do
+    if [ -d "$APP_DIR/$candidate" ]; then
+      BUILD_DIR="$candidate"
+      break
+    fi
+  done
+  # fallback to default 'dist'
+  BUILD_DIR="${BUILD_DIR:-dist}"
+fi
 
 # WAF settings (only used with CloudFront)
 # Set CREATE_WAF=true to create a WAF Web ACL that allows only the IPs in ALLOWED_IPS
@@ -79,9 +94,15 @@ POLICY
   fi
 fi
 
-if [ -n "${BUCKET:-}" ]; then
+  if [ -n "${BUCKET:-}" ]; then
+  # verify build directory exists
+  if [ ! -d "$APP_DIR/$BUILD_DIR" ]; then
+    echo "ERROR: build output directory '$BUILD_DIR' not found in $APP_DIR."
+    echo "Run 'npm run build' or set BUILD_DIR to the correct output folder."
+    exit 2
+  fi
   echo "Syncing $BUILD_DIR -> s3://$BUCKET"
-  aws s3 sync "$BUILD_DIR/" "s3://$BUCKET" --delete $PROFILE_ARG
+  aws s3 sync "$APP_DIR/$BUILD_DIR/" "s3://$BUCKET" --delete $PROFILE_ARG
 fi
 
 if [ "${CREATE_CF:-false}" = "true" ] || [ -n "${DISTRIBUTION_ID:-}" ]; then
@@ -92,15 +113,17 @@ if [ "${CREATE_CF:-false}" = "true" ] || [ -n "${DISTRIBUTION_ID:-}" ]; then
     # Optionally create an Origin Access Identity (OAI) so the bucket can remain private
     if [ "${CREATE_OAI:-true}" = "true" ]; then
       echo "Creating CloudFront Origin Access Identity (OAI)"
-      OAI_JSON=$(aws cloudfront create-cloud-front-origin-access-identity \
+      # Create OAI and capture its Id
+      OAI_ID=$(aws cloudfront create-cloud-front-origin-access-identity \
         --cloud-front-origin-access-identity-config CallerReference="$(date +%s)-$$",Comment="OAI for $BUCKET" $PROFILE_ARG \
-        --output json 2>/dev/null || true)
-      if [ -n "$OAI_JSON" ]; then
-        OAI_ID=$(echo "$OAI_JSON" | awk -F '"' '/Id/ {print $4; exit}')
-        OAI_S3CANON=$(echo "$OAI_JSON" | awk -F '"' '/S3CanonicalUserId/ {print $4; exit}')
+        --query 'CloudFrontOriginAccessIdentity.Id' --output text 2>/dev/null || true)
+
+      if [ -n "$OAI_ID" ] && [ "$OAI_ID" != "None" ]; then
+        # Retrieve the S3 canonical user id for the OAI
+        OAI_S3CANON=$(aws cloudfront get-cloud-front-origin-access-identity --id "$OAI_ID" $PROFILE_ARG --query 'CloudFrontOriginAccessIdentity.S3CanonicalUserId' --output text 2>/dev/null || true)
         echo "Created OAI: $OAI_ID (s3 canonical id: ${OAI_S3CANON:-unknown})"
       else
-        echo "Failed to create OAI or it already exists; attempting to continue"
+        echo "Failed to create OAI; attempting to continue without OAI id"
       fi
     fi
 
