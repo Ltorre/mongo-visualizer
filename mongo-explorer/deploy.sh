@@ -147,7 +147,10 @@ if [ "${CREATE_CF:-false}" = "true" ] || [ -n "${DISTRIBUTION_ID:-}" ]; then
     "TargetOriginId": "$BUCKET-origin",
     "ViewerProtocolPolicy": "redirect-to-https",
     "AllowedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] , "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
-    "ForwardedValues": { "QueryString": false, "Cookies": { "Forward": "none" } }
+    "ForwardedValues": { "QueryString": false, "Cookies": { "Forward": "none" } },
+    "MinTTL": 0,
+    "DefaultTTL": 86400,
+    "MaxTTL": 31536000
   },
   "DefaultRootObject": "index.html"
 }
@@ -207,10 +210,27 @@ POLICY
       # create ip set
       IP_ADDR_LIST=($ALLOWED_IPS)
       echo "IP set addresses: ${IP_ADDR_LIST[*]}"
-      IPSET_ARN=$(aws wafv2 create-ip-set --name "$IPSET_NAME" --scope CLOUDFRONT --ip-address-version IPV4 --addresses ${IP_ADDR_LIST[*]} --description "Allowed IPs for mongo-explorer" --region $AWS_WAF_REGION $PROFILE_ARG --query 'Summary.ARN' --output text)
-      echo "Created IP set: $IPSET_ARN"
+
+      # Check for existing IP set with the same name and reuse/update it to avoid duplicates
+      EXIST_IPSET_ID=$(aws wafv2 list-ip-sets --scope CLOUDFRONT --region $AWS_WAF_REGION $PROFILE_ARG --query "IPSets[?Name=='$IPSET_NAME'].Id" --output text || true)
+      if [ -n "$EXIST_IPSET_ID" ] && [ "$EXIST_IPSET_ID" != "None" ]; then
+        echo "Found existing IP set with id: $EXIST_IPSET_ID — updating addresses"
+        LOCK_TOKEN=$(aws wafv2 get-ip-set --name "$IPSET_NAME" --scope CLOUDFRONT --id "$EXIST_IPSET_ID" --region $AWS_WAF_REGION $PROFILE_ARG --query 'LockToken' --output text)
+        aws wafv2 update-ip-set --name "$IPSET_NAME" --scope CLOUDFRONT --id "$EXIST_IPSET_ID" --addresses ${IP_ADDR_LIST[*]} --lock-token "$LOCK_TOKEN" --region $AWS_WAF_REGION $PROFILE_ARG
+        IPSET_ARN=$(aws wafv2 get-ip-set --name "$IPSET_NAME" --scope CLOUDFRONT --id "$EXIST_IPSET_ID" --region $AWS_WAF_REGION $PROFILE_ARG --query 'IPSet.ARN' --output text)
+        echo "Updated IP set: $IPSET_ARN"
+      else
+        IPSET_ARN=$(aws wafv2 create-ip-set --name "$IPSET_NAME" --scope CLOUDFRONT --ip-address-version IPV4 --addresses ${IP_ADDR_LIST[*]} --description "Allowed IPs for mongo-explorer" --region $AWS_WAF_REGION $PROFILE_ARG --query 'Summary.ARN' --output text)
+          echo "Created IP set: $IPSET_ARN"
+      fi
 
       # create web ACL with a single allow rule referencing the ip set, default block
+      # Check for existing Web ACL with same name and reuse it if present
+      EXIST_WEBACL_ARN=$(aws wafv2 list-web-acls --scope CLOUDFRONT --region $AWS_WAF_REGION $PROFILE_ARG --query "WebACLs[?Name=='$WAF_NAME'].ARN" --output text || true)
+      if [ -n "$EXIST_WEBACL_ARN" ] && [ "$EXIST_WEBACL_ARN" != "None" ]; then
+        echo "Found existing Web ACL: $EXIST_WEBACL_ARN — will reuse it"
+        WEB_ACL_ARN="$EXIST_WEBACL_ARN"
+      else
       WEB_ACL_JSON=$(cat <<WACL
 {
   "Name": "$WAF_NAME",
@@ -233,8 +253,33 @@ WACL
       WEB_ACL_ARN=$(aws wafv2 create-web-acl --cli-input-json "$WEB_ACL_JSON" --region $AWS_WAF_REGION $PROFILE_ARG --query 'Summary.ARN' --output text)
       echo "Created Web ACL: $WEB_ACL_ARN"
 
-      # associate web acl with the distribution
-      CF_RESOURCE_ARN="arn:aws:cloudfront::$ACCOUNT_ID:distribution/$DISTRIBUTION_ID"
+      # Wait for the CloudFront distribution to be deployed and determine its ARN
+      echo "Waiting for CloudFront distribution $DISTRIBUTION_ID to become Deployed (this can take a few minutes)..."
+      MAX_WAIT=30
+      SLEEP_SECS=10
+      COUNTER=0
+      DIST_STATUS=""
+      while [ $COUNTER -lt $MAX_WAIT ]; do
+        DIST_STATUS=$(aws cloudfront get-distribution --id "$DISTRIBUTION_ID" $PROFILE_ARG --query 'Distribution.Status' --output text 2>/dev/null || true)
+        if [ "$DIST_STATUS" = "Deployed" ]; then
+          echo "Distribution status: Deployed"
+          break
+        fi
+        echo "Distribution status: ${DIST_STATUS:-unknown}. Sleeping ${SLEEP_SECS}s..."
+        sleep $SLEEP_SECS
+        COUNTER=$((COUNTER+1))
+      done
+      if [ "$DIST_STATUS" != "Deployed" ]; then
+        echo "Warning: distribution did not reach 'Deployed' status after $((MAX_WAIT*SLEEP_SECS)) seconds; attempting to resolve ARN anyway"
+      fi
+
+      # Prefer the canonical ARN from CloudFront; fall back to constructed ARN
+      CF_RESOURCE_ARN=$(aws cloudfront get-distribution --id "$DISTRIBUTION_ID" $PROFILE_ARG --query 'Distribution.ARN' --output text 2>/dev/null || true)
+      if [ -z "$CF_RESOURCE_ARN" ] || [ "$CF_RESOURCE_ARN" = "None" ]; then
+        CF_RESOURCE_ARN="arn:aws:cloudfront::$ACCOUNT_ID:distribution/$DISTRIBUTION_ID"
+      fi
+
+      echo "Using CloudFront resource ARN: $CF_RESOURCE_ARN"
       aws wafv2 associate-web-acl --web-acl-arn "$WEB_ACL_ARN" --resource-arn "$CF_RESOURCE_ARN" --region $AWS_WAF_REGION $PROFILE_ARG
       echo "Associated Web ACL with CloudFront distribution $DISTRIBUTION_ID"
     fi
@@ -246,6 +291,8 @@ WACL
     echo "Creating CloudFront invalidation for $DISTRIBUTION_ID"
     aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" $PROFILE_ARG
   fi
+fi
+
 fi
 
 echo "Deploy complete."

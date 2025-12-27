@@ -45,6 +45,7 @@ Production build
 
 ```bash
 cd mongo-explorer
+# build the production assets (output goes to `dist/`)
 npm run build
 ```
 

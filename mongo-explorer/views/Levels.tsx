@@ -113,6 +113,34 @@ ${processFields(fields, '    ')}
 }`;
 };
 
+// --- Helper Functions for Search ---
+
+const countFieldMatches = (fields: Field[], term: string): number => {
+  let count = 0;
+  for (const f of fields) {
+    if (f.path.toLowerCase().includes(term)) count++;
+    if (f.nested_fields && f.nested_fields.length > 0) {
+      count += countFieldMatches(f.nested_fields, term);
+    }
+  }
+  return count;
+};
+
+const getDatabaseMatchStats = (db: IDatabase, term: string) => {
+    if (!term) return { collectionMatches: 0, fieldMatches: 0 };
+    const lowerTerm = term.toLowerCase();
+    
+    let collectionMatches = 0;
+    let fieldMatches = 0;
+
+    db.collections.forEach(col => {
+        if (col.name.toLowerCase().includes(lowerTerm)) collectionMatches++;
+        fieldMatches += countFieldMatches(col.fields, lowerTerm);
+    });
+
+    return { collectionMatches, fieldMatches };
+};
+
 
 // --- Level 1: System Context (Cluster) ---
 
@@ -132,8 +160,18 @@ export const ClusterView: React.FC<ClusterViewProps> = ({ data, onSelectDatabase
   const totalSize = data.databases.reduce((acc, db) => acc + db.size_bytes, 0);
   const totalCollections = data.databases.reduce((acc, db) => acc + db.collections.length, 0);
   
-  const filteredDBs = data.databases
-    .filter(db => db.name.toLowerCase().includes(search.toLowerCase()));
+  const lowerSearch = search.toLowerCase();
+
+  const filteredDBs = data.databases.filter(db => {
+    if (!lowerSearch) return true;
+    
+    // 1. Check DB Name
+    if (db.name.toLowerCase().includes(lowerSearch)) return true;
+    
+    // 2. Deep Check (Collections & Fields)
+    const stats = getDatabaseMatchStats(db, lowerSearch);
+    return stats.collectionMatches > 0 || stats.fieldMatches > 0;
+  });
 
   // Sorting
   if (sortBy === 'size') {
@@ -195,35 +233,53 @@ export const ClusterView: React.FC<ClusterViewProps> = ({ data, onSelectDatabase
             <h2 className="text-lg font-semibold text-slate-800">Databases</h2>
             <div className="flex items-center gap-3">
               <div className="w-64">
-                <SearchBar value={search} onChange={setSearch} placeholder="Search databases..." />
+                <SearchBar value={search} onChange={setSearch} placeholder="Search databases, collections, fields..." />
               </div>
               <SortToggle value={sortBy} onChange={setSortBy} />
             </div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {filteredDBs.map((db) => (
-              <div 
-                key={db.name}
-                onClick={() => onSelectDatabase(db)}
-                className="group bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer relative overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ArrowRight className="text-indigo-500" size={20} />
-                </div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
-                    <DbIcon size={20} />
+            {filteredDBs.map((db) => {
+               const { collectionMatches, fieldMatches } = getDatabaseMatchStats(db, lowerSearch);
+               return (
+                <div 
+                  key={db.name}
+                  onClick={() => onSelectDatabase(db)}
+                  className="group bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ArrowRight className="text-indigo-500" size={20} />
                   </div>
-                  <h3 className="font-semibold text-slate-900 truncate" title={db.name}>{db.name}</h3>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                      <DbIcon size={20} />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 truncate" title={db.name}>{db.name}</h3>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-slate-500">
+                    <span>{db.collections.length} Collections</span>
+                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                    <span>{formatBytes(db.size_bytes)}</span>
+                  </div>
+
+                  {search && (collectionMatches > 0 || fieldMatches > 0) && (
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2 animate-in fade-in">
+                        {collectionMatches > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                {collectionMatches} Coll. Matches
+                            </span>
+                        )}
+                        {fieldMatches > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-purple-700 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">
+                                {fieldMatches} Field Matches
+                            </span>
+                        )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-4 text-sm text-slate-500">
-                  <span>{db.collections.length} Collections</span>
-                  <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                  <span>{formatBytes(db.size_bytes)}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {filteredDBs.length === 0 && (
               <div className="col-span-full py-12 text-center text-slate-400 italic">
                 No databases found matching your search.
@@ -254,8 +310,13 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'size' | 'alpha'>('size');
 
-  const filteredCollections = database.collections
-    .filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const lowerSearch = search.toLowerCase();
+
+  const filteredCollections = database.collections.filter(c => {
+    if (!lowerSearch) return true;
+    if (c.name.toLowerCase().includes(lowerSearch)) return true;
+    return countFieldMatches(c.fields, lowerSearch) > 0;
+  });
 
   // Sorting
   if (sortBy === 'size') {
@@ -293,40 +354,51 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
             <h2 className="text-lg font-semibold text-slate-800">Collections</h2>
             <div className="flex items-center gap-3">
               <div className="w-64">
-                <SearchBar value={search} onChange={setSearch} placeholder="Search collections..." />
+                <SearchBar value={search} onChange={setSearch} placeholder="Search collections, fields..." />
               </div>
               <SortToggle value={sortBy} onChange={setSortBy} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
-            {filteredCollections.map((col) => (
-              <div 
-                key={col.name}
-                onClick={() => onSelectCollection(col)}
-                className="group bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer flex items-center justify-between"
-              >
-                <div className="flex items-center gap-4 overflow-hidden">
-                  <div className="p-2 bg-slate-50 rounded-lg group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
-                    <Table size={18} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-slate-900 truncate pr-4">{col.name}</h3>
-                    <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
-                      <span>{formatNumber(col.document_count)} Docs</span>
-                      <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                      <span>Avg: {formatBytes(col.average_doc_size_bytes)}</span>
+            {filteredCollections.map((col) => {
+              const fieldMatches = search ? countFieldMatches(col.fields, lowerSearch) : 0;
+              
+              return (
+                <div 
+                  key={col.name}
+                  onClick={() => onSelectCollection(col)}
+                  className="group bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-4 overflow-hidden">
+                    <div className="p-2 bg-slate-50 rounded-lg group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors self-start">
+                      <Table size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-slate-900 truncate pr-4">{col.name}</h3>
+                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                        <span>{formatNumber(col.document_count)} Docs</span>
+                        <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                        <span>Avg: {formatBytes(col.average_doc_size_bytes)}</span>
+                      </div>
+                      {fieldMatches > 0 && (
+                          <div className="mt-2 animate-in fade-in">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-purple-700 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">
+                                  {fieldMatches} Field Matches
+                              </span>
+                          </div>
+                      )}
                     </div>
                   </div>
+                  <div className="flex items-center gap-4 pl-4">
+                    <span className="text-sm font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded whitespace-nowrap">
+                      {formatBytes(col.document_count * col.average_doc_size_bytes)}
+                    </span>
+                    <ArrowRight className="text-slate-300 group-hover:text-indigo-500 transition-colors" size={18} />
+                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded">
-                    {formatBytes(col.document_count * col.average_doc_size_bytes)}
-                  </span>
-                  <ArrowRight className="text-slate-300 group-hover:text-indigo-500 transition-colors" size={18} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
              {filteredCollections.length === 0 && (
               <div className="py-12 text-center text-slate-400 italic">
                 No collections found matching your search.

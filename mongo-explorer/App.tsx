@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, FileJson, AlertCircle } from 'lucide-react';
+import { Upload, FileJson, AlertCircle, Play } from 'lucide-react';
 import { ClusterScan, Database, Collection, ViewLevel, BreadcrumbItem, Field } from './types';
 import { ClusterView, DatabaseView, CollectionView, FieldView } from './views/Levels';
 
@@ -31,6 +31,28 @@ function App() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const loadDefaultSchema = async () => {
+    try {
+      const response = await fetch('./schema.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load file (Status: ${response.status})`);
+      }
+      const json = await response.json();
+      
+      // Simple validation
+      if (!json.databases || !Array.isArray(json.databases)) {
+        throw new Error("Invalid JSON structure: missing 'databases' array.");
+      }
+      setData(json);
+      setClusterName(json.cluster_name || 'Side-Cluster');
+      setCurrentLevel(ViewLevel.CLUSTER);
+      setError(null);
+    } catch (err) {
+       console.error(err);
+       setError("Could not load ./schema.json. Ensure the file exists in the root directory.");
+    }
   };
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -117,8 +139,18 @@ function App() {
               </div>
             </label>
 
+            <div className="mt-6 pt-6 border-t border-slate-100">
+               <button 
+                  onClick={loadDefaultSchema}
+                  className="mx-auto flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Play size={16} className="text-indigo-600" />
+                  Load local ./schema.json
+               </button>
+            </div>
+
             {error && (
-              <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-3 text-left">
+              <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-3 text-left animate-in fade-in slide-in-from-bottom-2">
                 <AlertCircle size={20} className="shrink-0" />
                 <p className="text-sm">{error}</p>
               </div>
