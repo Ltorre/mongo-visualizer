@@ -13,8 +13,8 @@ MongoDB schema information:
 Quick start
 -----------
 
-Prerequisites
-- Go 1.21+
+- Prerequisites
+- Go 1.24+
 - Node.js 18+ (Node 25 recommended for development)
 - npm or yarn
 

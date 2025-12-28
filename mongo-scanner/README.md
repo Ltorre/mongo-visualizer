@@ -24,6 +24,10 @@ go mod tidy
 go build -o mongo-scanner .
 ```
 
+Prerequisites
+- Go 1.24+
+
+
 ## Usage
 
 ```bash
