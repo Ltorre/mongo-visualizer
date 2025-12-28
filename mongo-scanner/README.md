@@ -130,3 +130,10 @@ mongo-scanner/
 ## License
 
 MIT
+
+Notes
+-----
+- For large clusters consider running scans from a machine with a stable
+  network and sufficient resources; sampling defaults are conservative.
+- If you need custom exporters or integrations, add them under
+  `internal/exporter` and register via the CLI flags.

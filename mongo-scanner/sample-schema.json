@@ -1,0 +1,79 @@
+{
+  "cluster_name": "example-cluster",
+  "scan_timestamp": "2025-12-28T00:00:00Z",
+  "databases": [
+    {
+      "name": "sampledb",
+      "size_bytes": 1048576,
+      "collections": [
+        {
+          "name": "users",
+          "document_count": 1234,
+          "average_doc_size_bytes": 512,
+          "indexes": ["_id", "email"],
+          "fields": [
+            {
+              "path": "_id",
+              "types": [
+                { "type": "objectId", "frequency_percent": 100 }
+              ],
+              "inferred_type": "objectId",
+              "presence_percent": 100
+            },
+            {
+              "path": "email",
+              "types": [
+                { "type": "string", "frequency_percent": 97.5 },
+                { "type": "null", "frequency_percent": 2.5 }
+              ],
+              "inferred_type": "string",
+              "presence_percent": 99
+            },
+            {
+              "path": "name",
+              "types": [
+                { "type": "string", "frequency_percent": 95 }
+              ],
+              "inferred_type": "string",
+              "presence_percent": 95
+            },
+            {
+              "path": "signup_date",
+              "types": [
+                { "type": "date", "frequency_percent": 90 },
+                { "type": "string", "frequency_percent": 10 }
+              ],
+              "inferred_type": "date",
+              "presence_percent": 90
+            },
+            {
+              "path": "profile.age",
+              "types": [
+                { "type": "int", "frequency_percent": 70 },
+                { "type": "null", "frequency_percent": 30 }
+              ],
+              "inferred_type": "int",
+              "presence_percent": 70
+            },
+            {
+              "path": "profile.prefs",
+              "types": [
+                { "type": "object", "frequency_percent": 50 }
+              ],
+              "inferred_type": "object",
+              "presence_percent": 50
+            },
+            {
+              "path": "isActive",
+              "types": [
+                { "type": "bool", "frequency_percent": 100 }
+              ],
+              "inferred_type": "bool",
+              "presence_percent": 100
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

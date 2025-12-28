@@ -26,3 +26,23 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Project-specific
+mongo-explorer/dist/
+
+# Build / package managers
+package-lock.json
+pnpm-lock.yaml
+
+# Environment
+.env
+.env.*
+.env.local
+
+# Scanner outputs (sensitive)
+/mongo-scanner/schema.json
+
+# Misc
+.cache/
+coverage/
+*.tgz

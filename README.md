@@ -1,18 +1,21 @@
-# mongo-explorer
 
-Mongo Explorer (mongo-explorer) — a small toolkit to scan MongoDB clusters
-and visualize inferred schema using a C4-style navigation (cluster → database → collection → fields).
+# mongo-viewer
 
-Contents
-- `mongo-scanner/` — Go CLI that samples a MongoDB cluster and exports a JSON schema report
-- `mongo-explorer/` — React + Vite frontend that loads the JSON report and provides an interactive UI
+This repository contains two related tools for generating and visualizing
+MongoDB schema information:
+
+- `mongo-scanner/` — a Go CLI that samples a MongoDB cluster and exports a
+	detailed schema report (JSON/YAML/CSV).
+- `mongo-explorer/` — a React + Vite frontend that loads a schema report and
+	provides an interactive C4-style navigation (cluster → database →
+	collection → fields) and export tools.
 
 Quick start
 -----------
 
 Prerequisites
 - Go 1.21+
-- Node.js (18+; Node 25 recommended for dev)
+- Node.js 18+ (Node 25 recommended for development)
 - npm or yarn
 
 1) Generate a schema (backend)
@@ -26,7 +29,7 @@ go run main.go scan --uri "mongodb+srv://<user>:<pass>@cluster.mongodb.net" --ou
 2) Run the frontend (dev)
 
 ```bash
-cd ../mongo-explorer
+cd mongo-explorer
 # install deps once
 npm install
 # run dev server
@@ -35,7 +38,8 @@ npm run dev
 ```
 
 3) Visualize
-- Upload the generated `sample-schema.json` (or `public/sample-schema.json`) in the UI and navigate the C4 levels.
+- Upload the generated `sample-schema.json` (or `public/sample-schema.json`) in
+	the UI and navigate the C4 levels.
 
 Production build
 
@@ -44,37 +48,17 @@ cd mongo-explorer
 npm run build
 ```
 
-The frontend supports exporting JSON, PNG, PDF, and generating Go structs for a collection.
+Where to read more
+- Scanner details: [mongo-scanner/README.md](mongo-scanner/README.md)
+- Explorer details: [mongo-explorer/README.md](mongo-explorer/README.md)
 
-Contributing
-------------
-- Open issues or PRs against the repository.
-- Keep schema export stable; include sample schema when filing issues.
-
+- Hosting helper: `mongo-explorer` contains a `deploy.sh` helper script that
+	can publish the built site to S3 (static website) or sync to an S3 origin
+	for CloudFront — see [mongo-explorer/README.md](mongo-explorer/README.md)
+	for exact commands and notes.
 
 License
 -------
-MIT License
+MIT License — see the license text in this repository.
 
-Copyright (c) 2025
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
----
 

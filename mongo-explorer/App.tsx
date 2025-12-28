@@ -5,7 +5,7 @@ import { ClusterView, DatabaseView, CollectionView, FieldView } from './views/Le
 
 function App() {
   const [data, setData] = useState<ClusterScan | null>(null);
-  const [clusterName, setClusterName] = useState('Side-Cluster');
+  const [clusterName, setClusterName] = useState('Cluster-Home');
   const [currentLevel, setCurrentLevel] = useState<ViewLevel>(ViewLevel.CLUSTER);
   const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null);
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
@@ -23,7 +23,7 @@ function App() {
           throw new Error("Invalid JSON structure: missing 'databases' array.");
         }
         setData(json);
-        setClusterName(json.cluster_name || 'Side-Cluster');
+        setClusterName(json.cluster_name || 'Cluster-Home');
         setCurrentLevel(ViewLevel.CLUSTER);
         setError(null);
       } catch (err) {
@@ -46,7 +46,7 @@ function App() {
         throw new Error("Invalid JSON structure: missing 'databases' array.");
       }
       setData(json);
-      setClusterName(json.cluster_name || 'Side-Cluster');
+      setClusterName(json.cluster_name || 'Cluster-Home');
       setCurrentLevel(ViewLevel.CLUSTER);
       setError(null);
     } catch (err) {
@@ -183,7 +183,7 @@ function App() {
                 onClick={() => navigateToLevel(ViewLevel.CLUSTER)}
                 className={`px-3 py-1.5 rounded-md transition-colors ${currentLevel === ViewLevel.CLUSTER ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
               >
-                Side Home
+                Cluster Home
               </button>
               
               {currentLevel !== ViewLevel.CLUSTER && selectedDatabase && (
