@@ -11,9 +11,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"mongodb-scanner/internal/analyzer"
-	"mongodb-scanner/internal/logger"
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/analyzer"
+	"mongo-scanner/internal/logger"
+	"mongo-scanner/internal/types"
 )
 
 // Scanner handles MongoDB schema scanning

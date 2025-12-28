@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/types"
 )
 
 // CSVExporter exports scan results to CSV format

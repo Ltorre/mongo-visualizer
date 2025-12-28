@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/types"
 )
 
 // Format represents the export format type

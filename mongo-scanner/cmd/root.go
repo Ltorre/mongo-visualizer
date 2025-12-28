@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"mongodb-scanner/internal/exporter"
-	"mongodb-scanner/internal/logger"
-	"mongodb-scanner/internal/scanner"
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/exporter"
+	"mongo-scanner/internal/logger"
+	"mongo-scanner/internal/scanner"
+	"mongo-scanner/internal/types"
 )
 
 var (
@@ -28,7 +28,7 @@ var (
 
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
-	Use:   "mongodb-scanner",
+	Use:   "mongo-scanner",
 	Short: "Scan MongoDB Atlas cluster and generate schema report",
 	Long: `MongoDB Schema Scanner analyzes your MongoDB Atlas cluster
 and generates a detailed report of the database structure including:

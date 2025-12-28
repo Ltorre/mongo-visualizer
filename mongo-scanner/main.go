@@ -1,7 +1,7 @@
 package main
 
 import (
-	"mongodb-scanner/cmd"
+	"mongo-scanner/cmd"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/types"
 )
 
 // YAMLExporter exports scan results to YAML format

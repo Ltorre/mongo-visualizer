@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/types"
 )
 
 // JSONExporter exports scan results to JSON format

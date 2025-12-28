@@ -6,7 +6,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 
-	"mongodb-scanner/internal/types"
+	"mongo-scanner/internal/types"
 )
 
 // AnalyzeDocuments analyzes a slice of documents and returns field statistics

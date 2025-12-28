@@ -1,4 +1,4 @@
-module mongodb-scanner
+module mongo-scanner
 
 go 1.21
 
