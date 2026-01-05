@@ -1,6 +1,10 @@
 
 # mongo-explorer
 
+# mongo-explorer
+
+A public demo is available at https://mongo-viewer.federici.me/ — it runs entirely in the browser, does not save any user data, and includes a default sample dataset you can load from the site to explore all features.
+
 React + Vite frontend for visualizing MongoDB schema reports produced by
 `mongo-scanner`. The UI presents a C4-style navigation (cluster → database →
 collection → fields) with exporting and schema generation helpers.

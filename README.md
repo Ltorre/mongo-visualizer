@@ -1,6 +1,8 @@
 
 # mongo-viewer
 
+A public demo is available at https://mongo-viewer.federici.me/ — it runs entirely in the browser, does not save any user data, and includes a default sample dataset you can load from the site to explore all features.
+
 This repository contains two related tools for generating and visualizing
 MongoDB schema information:
 
