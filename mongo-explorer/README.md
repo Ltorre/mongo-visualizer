@@ -42,6 +42,8 @@ Features
 - Generate Go structs for a selected collection
 - Upload a schema JSON file or load the GitHub sample schema from
   `mongo-scanner/sample-schema.json`
+- Browser back/forward follows the C4 navigation levels
+- The loaded schema and current level survive a page refresh in the current tab
 
 Files of interest
 - `index.html`, `index.tsx`, `App.tsx` — app entry and mounting
