@@ -15,6 +15,8 @@ export interface Collection {
   name: string;
   document_count: number;
   average_doc_size_bytes: number;
+  /** Physical collection size from collStats, including indexes. */
+  size_bytes?: number;
   indexes: string[];
   fields: Field[];
 }
@@ -22,10 +24,12 @@ export interface Collection {
 export interface Database {
   name: string;
   size_bytes: number;
+  data_size_bytes?: number;
   collections: Collection[];
 }
 
 export interface ClusterScan {
+  schema_version?: number;
   cluster_name: string;
   scan_timestamp: string;
   databases: Database[];

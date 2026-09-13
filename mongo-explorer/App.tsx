@@ -35,7 +35,11 @@ function App() {
 
   const loadDefaultSchema = async () => {
     try {
-      const response = await fetch('./schema.json');
+      // The default schema is deployed independently from the app bundle.
+      // Avoid showing a browser/CloudFront-cached scan after a new upload.
+      const response = await fetch(`./schema.json?ts=${Date.now()}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) {
         throw new Error(`Failed to load file (Status: ${response.status})`);
       }

@@ -141,6 +141,18 @@ const getDatabaseMatchStats = (db: IDatabase, term: string) => {
     return { collectionMatches, fieldMatches };
 };
 
+// Older scan files do not have collection size_bytes. Keep them readable by
+// falling back to the old sampled logical-data estimate.
+const getCollectionSize = (collection: Collection): number => {
+  if (typeof collection.size_bytes === 'number' && collection.size_bytes > 0) {
+    return collection.size_bytes;
+  }
+  return collection.document_count * collection.average_doc_size_bytes;
+};
+
+const collectionSizeLabel = (collection: Collection): string =>
+  collection.size_bytes ? 'Storage' : 'Estimated data';
+
 
 // --- Level 1: System Context (Cluster) ---
 
@@ -158,7 +170,9 @@ export const ClusterView: React.FC<ClusterViewProps> = ({ data, onSelectDatabase
   const [sortBy, setSortBy] = useState<'size' | 'alpha'>('size');
 
   const totalSize = data.databases.reduce((acc, db) => acc + db.size_bytes, 0);
+  const totalDataSize = data.databases.reduce((acc, db) => acc + (db.data_size_bytes || 0), 0);
   const totalCollections = data.databases.reduce((acc, db) => acc + db.collections.length, 0);
+  const hasSizeMetrics = data.schema_version === 2;
   
   const lowerSearch = search.toLowerCase();
 
@@ -221,10 +235,11 @@ export const ClusterView: React.FC<ClusterViewProps> = ({ data, onSelectDatabase
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard label="Total Databases" value={data.databases.length.toString()} icon={HardDrive} />
         <StatCard label="Total Collections" value={totalCollections.toString()} icon={Layers} />
-        <StatCard label="Total Size" value={formatBytes(totalSize)} icon={Database} />
+        <StatCard label={hasSizeMetrics ? 'Total Size (on disk)' : 'Legacy Scan Size'} value={formatBytes(totalSize)} icon={Database} />
+        {hasSizeMetrics && <StatCard label="Total Logical Data" value={formatBytes(totalDataSize)} icon={Database} />}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -257,10 +272,17 @@ export const ClusterView: React.FC<ClusterViewProps> = ({ data, onSelectDatabase
                     </div>
                     <h3 className="font-semibold text-slate-900 truncate" title={db.name}>{db.name}</h3>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-slate-500">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
                     <span>{db.collections.length} Collections</span>
                     <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                    <span>{formatBytes(db.size_bytes)}</span>
+                    {hasSizeMetrics ? (
+                      <>
+                        <span>On disk: {formatBytes(db.size_bytes)}</span>
+                        <span>Logical: {formatBytes(db.data_size_bytes || 0)}</span>
+                      </>
+                    ) : (
+                      <span>Legacy logical: {formatBytes(db.size_bytes)}</span>
+                    )}
                   </div>
 
                   {search && (collectionMatches > 0 || fieldMatches > 0) && (
@@ -311,6 +333,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
   const [sortBy, setSortBy] = useState<'size' | 'alpha'>('size');
 
   const lowerSearch = search.toLowerCase();
+  const hasSizeMetrics = typeof database.data_size_bytes === 'number';
 
   const filteredCollections = database.collections.filter(c => {
     if (!lowerSearch) return true;
@@ -320,14 +343,14 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
 
   // Sorting
   if (sortBy === 'size') {
-    filteredCollections.sort((a, b) => (b.document_count * b.average_doc_size_bytes) - (a.document_count * a.average_doc_size_bytes));
+    filteredCollections.sort((a, b) => getCollectionSize(b) - getCollectionSize(a));
   } else {
     filteredCollections.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   const chartData = filteredCollections.map(c => ({ 
     name: c.name, 
-    size: c.document_count * c.average_doc_size_bytes 
+    size: getCollectionSize(c)
   }));
 
   return (
@@ -342,10 +365,11 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard label="Collections" value={database.collections.length.toString()} icon={Layers} />
         <StatCard label="Total Documents" value={formatNumber(database.collections.reduce((acc, c) => acc + c.document_count, 0))} icon={FileText} />
-        <StatCard label="Total Size" value={formatBytes(database.size_bytes)} icon={Database} />
+        <StatCard label={hasSizeMetrics ? 'Total Size (on disk)' : 'Legacy Scan Size'} value={formatBytes(database.size_bytes)} icon={Database} />
+        {hasSizeMetrics && <StatCard label="Logical Data" value={formatBytes(database.data_size_bytes || 0)} icon={Database} />}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -379,7 +403,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
                       <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
                         <span>{formatNumber(col.document_count)} Docs</span>
                         <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                        <span>Avg: {formatBytes(col.average_doc_size_bytes)}</span>
+                        <span>Avg doc: {formatBytes(col.average_doc_size_bytes)}</span>
                       </div>
                       {fieldMatches > 0 && (
                           <div className="mt-2 animate-in fade-in">
@@ -392,7 +416,7 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ database, onSelectCo
                   </div>
                   <div className="flex items-center gap-4 pl-4">
                     <span className="text-sm font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded whitespace-nowrap">
-                      {formatBytes(col.document_count * col.average_doc_size_bytes)}
+                      {collectionSizeLabel(col)}: {formatBytes(getCollectionSize(col))}
                     </span>
                     <ArrowRight className="text-slate-300 group-hover:text-indigo-500 transition-colors" size={18} />
                   </div>
@@ -431,7 +455,8 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ collection, onSe
   const [collapseTrigger, setCollapseTrigger] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  const totalSize = collection.document_count * collection.average_doc_size_bytes;
+  const totalSize = getCollectionSize(collection);
+  const estimatedDataSize = collection.document_count * collection.average_doc_size_bytes;
 
   const handleCopyCode = () => {
     const code = generateGoStruct(collection.name, collection.fields);
@@ -452,10 +477,11 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ collection, onSe
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <StatCard label="Documents" value={formatNumber(collection.document_count)} icon={FileText} />
         <StatCard label="Avg Size" value={formatBytes(collection.average_doc_size_bytes)} icon={Info} />
-        <StatCard label="Total Size" value={formatBytes(totalSize)} icon={Database} />
+        <StatCard label={collection.size_bytes ? 'Storage Size' : 'Estimated Data Size'} value={formatBytes(totalSize)} icon={Database} />
+        {collection.size_bytes !== undefined && collection.size_bytes > 0 && <StatCard label="Estimated Data" value={formatBytes(estimatedDataSize)} icon={Database} />}
         <StatCard label="Indexes" value={collection.indexes.length.toString()} icon={Layers} />
       </div>
 
