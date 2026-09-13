@@ -3,7 +3,7 @@
 
 # mongo-explorer
 
-A public demo is available at https://mongo-viewer.federici.me/ — it runs entirely in the browser, does not save any user data, and includes a default sample dataset you can load from the site to explore all features.
+A public demo is available at [https://mongo-viewer.lucien.corsica/](https://mongo-viewer.lucien.corsica/) — it runs entirely in the browser, does not save any user data, and includes a default sample dataset you can load from the site to explore all features.
 
 React + Vite frontend for visualizing MongoDB schema reports produced by
 `mongo-scanner`. The UI presents a C4-style navigation (cluster → database →
@@ -40,14 +40,15 @@ Features
 - Export collection schema as JSON
 - Export visualizations as PNG and PDF
 - Generate Go structs for a selected collection
-- Upload/Load a schema JSON file (e.g., `public/sample-schema.json`)
+- Upload a schema JSON file or load the GitHub sample schema from
+  `mongo-scanner/sample-schema.json`
 
 Files of interest
 - `index.html`, `index.tsx`, `App.tsx` — app entry and mounting
 - `utils.ts`, `types.ts`, `metadata.json` — helper types and metadata
 - `components/` — UI components like charts and schema views
 - `views/` — top-level views for C4 navigation
-- `public/sample-schema.json` — sample data for quick testing (if present)
+- `../mongo-scanner/sample-schema.json` — sample data loaded by the hosted demo
 
 
 Deploy script (`deploy.sh`)
@@ -174,4 +175,3 @@ Contributing
 License
 -------
 MIT — see the repository root `README.md` for the full license text.
-

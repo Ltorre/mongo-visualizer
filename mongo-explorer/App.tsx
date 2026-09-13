@@ -3,6 +3,8 @@ import { Upload, FileJson, AlertCircle, Play } from 'lucide-react';
 import { ClusterScan, Database, Collection, ViewLevel, BreadcrumbItem, Field } from './types';
 import { ClusterView, DatabaseView, CollectionView, FieldView } from './views/Levels';
 
+const DEFAULT_SCHEMA_URL = 'https://raw.githubusercontent.com/Ltorre/mongo-visualizer/main/mongo-scanner/sample-schema.json';
+
 function App() {
   const [data, setData] = useState<ClusterScan | null>(null);
   const [clusterName, setClusterName] = useState('Cluster-Home');
@@ -35,9 +37,7 @@ function App() {
 
   const loadDefaultSchema = async () => {
     try {
-      // The default schema is deployed independently from the app bundle.
-      // Avoid showing a browser/CloudFront-cached scan after a new upload.
-      const response = await fetch(`./schema.json?ts=${Date.now()}`, {
+      const response = await fetch(`${DEFAULT_SCHEMA_URL}?ts=${Date.now()}`, {
         cache: 'no-store',
       });
       if (!response.ok) {
@@ -55,7 +55,7 @@ function App() {
       setError(null);
     } catch (err) {
        console.error(err);
-       setError("Could not load ./schema.json. Ensure the file exists in the root directory.");
+       setError("Could not load the GitHub sample schema. Check the network connection and try again.");
     }
   };
 
@@ -149,7 +149,7 @@ function App() {
                   className="mx-auto flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
                 >
                   <Play size={16} className="text-indigo-600" />
-                  Load local ./schema.json
+                  Load GitHub sample schema
                </button>
             </div>
 

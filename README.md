@@ -1,7 +1,7 @@
 
 # mongo-viewer
 
-A public demo is available at https://mongo-viewer.federici.me/ — it runs entirely in the browser, does not save any user data, and includes a default sample dataset you can load from the site to explore all features.
+A public demo is available at [https://mongo-viewer.lucien.corsica/](https://mongo-viewer.lucien.corsica/) — it runs entirely in the browser, does not save any user data, and includes a default sample dataset you can load from the site to explore all features.
 
 This repository contains two related tools for generating and visualizing
 MongoDB schema information:
@@ -40,8 +40,10 @@ npm run dev
 ```
 
 3) Visualize
-- Upload the generated `sample-schema.json` (or `public/sample-schema.json`) in
-	the UI and navigate the C4 levels.
+- Click **Load GitHub sample schema** to load the version tracked at
+  [`mongo-scanner/sample-schema.json`](mongo-scanner/sample-schema.json), or
+  upload another generated schema file in the UI.
+- Navigate the C4 levels: cluster → database → collection → fields.
 
 Production build
 
@@ -62,5 +64,4 @@ Where to read more
 License
 -------
 MIT License — see the license text in this repository.
-
 
