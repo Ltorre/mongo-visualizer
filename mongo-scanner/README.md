@@ -39,6 +39,13 @@ go build -o mongo-scanner .
   --timeout 600 \
   --max-docs 50000
 
+# Exhaustive scan: process every document, without sampling
+./mongo-scanner \
+  --uri "mongodb+srv://..." \
+  --output ./data/schema-exhaustive.json \
+  --exhaustive \
+  --timeout 86400
+
 # Filter specific databases
 ./mongo-scanner \
   --uri "mongodb+srv://..." \
@@ -56,6 +63,7 @@ go build -o mongo-scanner .
 | `--timeout` | 300 | Scan timeout in seconds |
 | `--verbose` | false | Enable verbose logging |
 | `--max-docs` | 75000 | Max documents to sample per collection |
+| `--exhaustive` | false | Process every document without sampling; uses a streaming cursor |
 
 ## Sampling Strategy
 
@@ -75,11 +83,13 @@ go build -o mongo-scanner .
     {
       "name": "mydb",
       "size_bytes": 1234567,
+      "data_size_bytes": 2345678,
       "collections": [
         {
           "name": "users",
           "document_count": 10000,
           "average_doc_size_bytes": 512,
+          "size_bytes": 987654,
           "indexes": ["_id", "email"],
           "fields": [
             {
@@ -104,6 +114,13 @@ go build -o mongo-scanner .
   ]
 }
 ```
+
+The scan format uses schema_version: 2. Database size_bytes is the on-disk
+size returned by listDatabases, matching mongosh's show databases;
+data_size_bytes is logical/uncompressed data from dbStats. Collection
+size_bytes is the physical collection size from collStats (including indexes
+when the server provides totalSize). average_doc_size_bytes remains a sampled
+logical-document estimate.
 ## Project Structure
 
 ```

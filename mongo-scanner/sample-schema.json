@@ -1,15 +1,18 @@
 {
+  "schema_version": 2,
   "cluster_name": "example-cluster",
   "scan_timestamp": "2025-12-28T00:00:00Z",
   "databases": [
     {
       "name": "sampledb",
-      "size_bytes": 1048576,
+      "size_bytes": 1572864,
+      "data_size_bytes": 2097152,
       "collections": [
         {
           "name": "users",
           "document_count": 1234,
           "average_doc_size_bytes": 512,
+          "size_bytes": 987654,
           "indexes": ["_id", "email"],
           "fields": [
             {

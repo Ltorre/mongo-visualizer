@@ -58,10 +58,18 @@ func (s *Scanner) ScanAll(ctx context.Context) (*types.ScanResult, error) {
 	// Get cluster name from connection
 	clusterName := s.extractClusterName()
 
-	// List all databases
-	databases, err := s.client.ListDatabaseNames(ctx, bson.M{})
+	// List all databases. SizeOnDisk is the metric used by mongosh's
+	// show databases output. dbStats.dataSize is logical/uncompressed data
+	// and can differ significantly on compressed storage engines.
+	databaseResult, err := s.client.ListDatabases(ctx, bson.M{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+	databases := make([]string, 0, len(databaseResult.Databases))
+	databaseSizes := make(map[string]int64, len(databaseResult.Databases))
+	for _, database := range databaseResult.Databases {
+		databases = append(databases, database.Name)
+		databaseSizes[database.Name] = database.SizeOnDisk
 	}
 
 	// Filter databases if specified
@@ -70,6 +78,7 @@ func (s *Scanner) ScanAll(ctx context.Context) (*types.ScanResult, error) {
 	s.log.Info("Found %d databases to scan", len(databases))
 
 	result := &types.ScanResult{
+		SchemaVersion: 2,
 		ClusterName:   clusterName,
 		ScanTimestamp: time.Now().UTC().Format(time.RFC3339),
 		Databases:     make([]types.Database, 0, len(databases)),
@@ -93,7 +102,7 @@ func (s *Scanner) ScanAll(ctx context.Context) (*types.ScanResult, error) {
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			dbSchema, err := s.ScanDatabase(ctx, dbName)
+			dbSchema, err := s.scanDatabase(ctx, dbName, databaseSizes[dbName])
 			if err != nil {
 				s.log.Error("Error scanning database %s: %v", dbName, err)
 				return
@@ -115,23 +124,31 @@ func (s *Scanner) ScanAll(ctx context.Context) (*types.ScanResult, error) {
 func (s *Scanner) ScanDatabase(ctx context.Context, dbName string) (*types.Database, error) {
 	s.log.Info("Scanning database: %s", dbName)
 
+	databaseResult, err := s.client.ListDatabases(ctx, bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+	for _, database := range databaseResult.Databases {
+		if database.Name == dbName {
+			return s.scanDatabase(ctx, dbName, database.SizeOnDisk)
+		}
+	}
+
+	return nil, fmt.Errorf("database %s was not found", dbName)
+}
+
+func (s *Scanner) scanDatabase(ctx context.Context, dbName string, sizeOnDisk int64) (*types.Database, error) {
+	s.log.Info("Scanning database: %s", dbName)
+
 	db := s.client.Database(dbName)
 
-	// Get database stats
+	// Keep the logical data size as a second metric. This is what the old
+	// scanner stored, while sizeOnDisk is what mongosh show databases uses.
 	var dbStats bson.M
-	err := db.RunCommand(ctx, bson.D{{Key: "dbStats", Value: 1}}).Decode(&dbStats)
-	if err != nil {
-		s.log.Warn("Could not get stats for database %s: %v", dbName, err)
+	if err := db.RunCommand(ctx, bson.D{{Key: "dbStats", Value: 1}}).Decode(&dbStats); err != nil {
+		s.log.Warn("Could not get logical stats for database %s: %v", dbName, err)
 	}
-
-	sizeBytes := int64(0)
-	if size, ok := dbStats["dataSize"].(float64); ok {
-		sizeBytes = int64(size)
-	} else if size, ok := dbStats["dataSize"].(int64); ok {
-		sizeBytes = size
-	} else if size, ok := dbStats["dataSize"].(int32); ok {
-		sizeBytes = int64(size)
-	}
+	dataSize, _ := bsonInt64(dbStats["dataSize"])
 
 	// List collections
 	collections, err := db.ListCollectionNames(ctx, bson.M{})
@@ -142,9 +159,10 @@ func (s *Scanner) ScanDatabase(ctx context.Context, dbName string) (*types.Datab
 	s.log.Debug("Found %d collections in %s", len(collections), dbName)
 
 	database := &types.Database{
-		Name:        dbName,
-		SizeBytes:   sizeBytes,
-		Collections: make([]types.Collection, 0, len(collections)),
+		Name:          dbName,
+		SizeBytes:     sizeOnDisk,
+		DataSizeBytes: dataSize,
+		Collections:   make([]types.Collection, 0, len(collections)),
 	}
 
 	// Scan collections concurrently
@@ -194,9 +212,6 @@ func (s *Scanner) ScanCollection(ctx context.Context, dbName, collName string) (
 		docCount = 0
 	}
 
-	// Determine sample size based on document count
-	sampleSize := s.calculateSampleSize(docCount)
-
 	// Get indexes
 	indexes, err := s.getIndexes(ctx, coll)
 	if err != nil {
@@ -204,37 +219,134 @@ func (s *Scanner) ScanCollection(ctx context.Context, dbName, collName string) (
 		indexes = []string{}
 	}
 
-	// Sample documents
-	docs, err := s.sampleDocuments(ctx, coll, sampleSize)
+	// Use physical collection size for the UI. Sampled document sizes omit
+	// indexes, storage overhead, compression effects, and sampling variance.
+	collectionSize, err := s.getCollectionSize(ctx, dbName, collName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sample documents from %s.%s: %w", dbName, collName, err)
+		s.log.Warn("Could not get physical size for %s.%s: %v", dbName, collName, err)
+		collectionSize = 0
 	}
 
-	s.log.Debug("Sampled %d documents from %s.%s", len(docs), dbName, collName)
-
-	// Analyze documents
-	analysis := analyzer.AnalyzeDocuments(docs)
-
-	// Calculate average doc size
-	avgDocSize := int64(0)
-	if len(docs) > 0 {
-		totalSize := int64(0)
-		for _, doc := range docs {
-			data, _ := bson.Marshal(doc)
-			totalSize += int64(len(data))
+	var analysis *types.CollectionAnalysis
+	var avgDocSize int64
+	if s.options.Exhaustive {
+		var scannedCount int64
+		analysis, avgDocSize, scannedCount, err = s.analyzeAllDocuments(ctx, coll, dbName, collName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exhaustively scan documents from %s.%s: %w", dbName, collName, err)
 		}
-		avgDocSize = totalSize / int64(len(docs))
+		docCount = scannedCount
+	} else {
+		// Determine sample size based on document count
+		sampleSize := s.calculateSampleSize(docCount)
+
+		// Sample documents
+		docs, sampleErr := s.sampleDocuments(ctx, coll, sampleSize)
+		if sampleErr != nil {
+			return nil, fmt.Errorf("failed to sample documents from %s.%s: %w", dbName, collName, sampleErr)
+		}
+
+		s.log.Debug("Sampled %d documents from %s.%s", len(docs), dbName, collName)
+		analysis = analyzer.AnalyzeDocuments(docs)
+
+		if len(docs) > 0 {
+			totalSize := int64(0)
+			for _, doc := range docs {
+				data, _ := bson.Marshal(doc)
+				totalSize += int64(len(data))
+			}
+			avgDocSize = totalSize / int64(len(docs))
+		}
 	}
 
 	collection := &types.Collection{
 		Name:                collName,
 		DocumentCount:       docCount,
 		AverageDocSizeBytes: avgDocSize,
+		SizeBytes:           collectionSize,
 		Indexes:             indexes,
 		Fields:              analysis.Fields,
 	}
 
 	return collection, nil
+}
+
+func (s *Scanner) analyzeAllDocuments(ctx context.Context, coll *mongo.Collection, dbName, collName string) (*types.CollectionAnalysis, int64, int64, error) {
+	findOpts := options.Find().SetBatchSize(1000)
+	cursor, err := coll.Find(ctx, bson.M{}, findOpts)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	documentAnalyzer := analyzer.NewDocumentAnalyzer()
+	var totalSize int64
+	var documentCount int64
+	for cursor.Next(ctx) {
+		var doc bson.M
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, 0, documentCount, err
+		}
+
+		documentAnalyzer.Add(doc)
+		data, _ := bson.Marshal(doc)
+		totalSize += int64(len(data))
+		documentCount++
+		if documentCount%10000 == 0 {
+			s.log.Info("Exhaustively scanned %d documents from %s.%s", documentCount, dbName, collName)
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, 0, documentCount, err
+	}
+
+	avgDocSize := int64(0)
+	if documentCount > 0 {
+		avgDocSize = totalSize / documentCount
+	}
+	s.log.Info("Exhaustive scan completed for %s.%s: %d documents", dbName, collName, documentCount)
+	return documentAnalyzer.Result(), avgDocSize, documentCount, nil
+}
+
+func (s *Scanner) getCollectionSize(ctx context.Context, dbName, collName string) (int64, error) {
+	var stats bson.M
+	err := s.client.Database(dbName).RunCommand(ctx, bson.D{
+		{Key: "collStats", Value: collName},
+	}).Decode(&stats)
+	if err != nil {
+		return 0, err
+	}
+
+	if totalSize, ok := bsonInt64(stats["totalSize"]); ok {
+		return totalSize, nil
+	}
+
+	// totalSize is storageSize + totalIndexSize. Keep a fallback for server
+	// versions or collection types that do not return totalSize directly.
+	storageSize, storageOK := bsonInt64(stats["storageSize"])
+	indexSize, indexOK := bsonInt64(stats["totalIndexSize"])
+	if storageOK || indexOK {
+		return storageSize + indexSize, nil
+	}
+
+	return 0, fmt.Errorf("collStats did not return totalSize")
+}
+
+func bsonInt64(value interface{}) (int64, bool) {
+	switch value := value.(type) {
+	case int64:
+		return value, true
+	case int32:
+		return int64(value), true
+	case int:
+		return int64(value), true
+	case float64:
+		return int64(value), true
+	case float32:
+		return int64(value), true
+	default:
+		return 0, false
+	}
 }
 
 // calculateSampleSize determines how many documents to sample

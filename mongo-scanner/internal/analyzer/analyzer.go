@@ -9,34 +9,47 @@ import (
 	"mongo-scanner/internal/types"
 )
 
-// AnalyzeDocuments analyzes a slice of documents and returns field statistics
-func AnalyzeDocuments(docs []bson.M) *types.CollectionAnalysis {
-	if len(docs) == 0 {
+// DocumentAnalyzer accumulates schema statistics without retaining documents.
+// This allows exhaustive scans to process large collections with bounded
+// memory usage.
+type DocumentAnalyzer struct {
+	fieldStats map[string]*fieldStat
+	totalDocs  int
+}
+
+// NewDocumentAnalyzer creates an empty streaming analyzer.
+func NewDocumentAnalyzer() *DocumentAnalyzer {
+	return &DocumentAnalyzer{
+		fieldStats: make(map[string]*fieldStat),
+	}
+}
+
+// Add incorporates one document into the analysis.
+func (a *DocumentAnalyzer) Add(doc bson.M) {
+	extractFields(doc, "", a.fieldStats)
+	a.totalDocs++
+}
+
+// Result returns the accumulated field statistics.
+func (a *DocumentAnalyzer) Result() *types.CollectionAnalysis {
+	if a.totalDocs == 0 {
 		return &types.CollectionAnalysis{
 			Fields:           []types.Field{},
 			SchemaConfidence: 0,
 		}
 	}
 
-	// Track field occurrences and types
-	fieldStats := make(map[string]*fieldStat)
-	totalDocs := len(docs)
-
-	for _, doc := range docs {
-		extractFields(doc, "", fieldStats)
-	}
-
 	// Convert to Field slice
-	fields := make([]types.Field, 0, len(fieldStats))
+	fields := make([]types.Field, 0, len(a.fieldStats))
 	var rareFields []string
 
-	for path, stat := range fieldStats {
+	for path, stat := range a.fieldStats {
 		// Skip nested paths (they'll be handled as nested_fields)
 		if strings.Contains(path, ".") {
 			continue
 		}
 
-		field := buildField(path, stat, fieldStats, totalDocs)
+		field := buildField(path, stat, a.fieldStats, a.totalDocs)
 		fields = append(fields, field)
 
 		if field.PresencePercent < 5.0 {
@@ -63,6 +76,15 @@ func AnalyzeDocuments(docs []bson.M) *types.CollectionAnalysis {
 		SchemaConfidence: confidence,
 		RareFields:       rareFields,
 	}
+}
+
+// AnalyzeDocuments analyzes a slice of documents and returns field statistics.
+func AnalyzeDocuments(docs []bson.M) *types.CollectionAnalysis {
+	analyzer := NewDocumentAnalyzer()
+	for _, doc := range docs {
+		analyzer.Add(doc)
+	}
+	return analyzer.Result()
 }
 
 // fieldStat tracks statistics for a single field path

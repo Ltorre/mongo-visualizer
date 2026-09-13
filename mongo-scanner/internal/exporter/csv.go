@@ -21,9 +21,12 @@ func (e *CSVExporter) Export(result *types.ScanResult, w io.Writer) error {
 	// Write header
 	header := []string{
 		"Database",
+		"Database Size On Disk (bytes)",
+		"Database Logical Data Size (bytes)",
 		"Collection",
 		"Document Count",
 		"Avg Doc Size (bytes)",
+		"Collection Size (bytes)",
 		"Field Path",
 		"Inferred Type",
 		"Presence %",
@@ -36,7 +39,7 @@ func (e *CSVExporter) Export(result *types.ScanResult, w io.Writer) error {
 	// Write data
 	for _, db := range result.Databases {
 		for _, coll := range db.Collections {
-			e.writeFields(writer, db.Name, coll.Name, coll.DocumentCount, coll.AverageDocSizeBytes, coll.Fields, "")
+			e.writeFields(writer, db.Name, db.SizeBytes, db.DataSizeBytes, coll.Name, coll.DocumentCount, coll.AverageDocSizeBytes, coll.SizeBytes, coll.Fields, "")
 		}
 	}
 
@@ -44,7 +47,7 @@ func (e *CSVExporter) Export(result *types.ScanResult, w io.Writer) error {
 }
 
 // writeFields recursively writes fields to CSV
-func (e *CSVExporter) writeFields(writer *csv.Writer, dbName, collName string, docCount, avgSize int64, fields []types.Field, prefix string) {
+func (e *CSVExporter) writeFields(writer *csv.Writer, dbName string, dbSize, dbDataSize int64, collName string, docCount, avgSize, collSize int64, fields []types.Field, prefix string) {
 	for _, field := range fields {
 		path := field.Path
 		if prefix != "" {
@@ -60,9 +63,12 @@ func (e *CSVExporter) writeFields(writer *csv.Writer, dbName, collName string, d
 
 		row := []string{
 			dbName,
+			fmt.Sprintf("%d", dbSize),
+			fmt.Sprintf("%d", dbDataSize),
 			collName,
 			fmt.Sprintf("%d", docCount),
 			fmt.Sprintf("%d", avgSize),
+			fmt.Sprintf("%d", collSize),
 			path,
 			field.InferredType,
 			fmt.Sprintf("%.1f", field.PresencePercent),
@@ -72,7 +78,7 @@ func (e *CSVExporter) writeFields(writer *csv.Writer, dbName, collName string, d
 
 		// Write nested fields
 		if len(field.NestedFields) > 0 {
-			e.writeFields(writer, dbName, collName, docCount, avgSize, field.NestedFields, path)
+			e.writeFields(writer, dbName, dbSize, dbDataSize, collName, docCount, avgSize, collSize, field.NestedFields, path)
 		}
 	}
 }

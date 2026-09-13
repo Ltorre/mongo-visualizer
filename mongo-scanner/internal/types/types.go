@@ -10,6 +10,7 @@ import (
 
 // ScanResult represents the complete scan output
 type ScanResult struct {
+	SchemaVersion int        `json:"schema_version" yaml:"schema_version"`
 	ClusterName   string     `json:"cluster_name" yaml:"cluster_name"`
 	ScanTimestamp string     `json:"scan_timestamp" yaml:"scan_timestamp"`
 	Databases     []Database `json:"databases" yaml:"databases"`
@@ -17,18 +18,26 @@ type ScanResult struct {
 
 // Database represents a MongoDB database schema
 type Database struct {
-	Name        string       `json:"name" yaml:"name"`
-	SizeBytes   int64        `json:"size_bytes" yaml:"size_bytes"`
-	Collections []Collection `json:"collections" yaml:"collections"`
+	Name string `json:"name" yaml:"name"`
+	// SizeBytes is the database's on-disk size, matching listDatabases and
+	// mongosh's show databases output.
+	SizeBytes int64 `json:"size_bytes" yaml:"size_bytes"`
+	// DataSizeBytes is the logical/uncompressed data size from dbStats.
+	DataSizeBytes int64        `json:"data_size_bytes" yaml:"data_size_bytes"`
+	Collections   []Collection `json:"collections" yaml:"collections"`
 }
 
 // Collection represents a MongoDB collection schema
 type Collection struct {
-	Name                string   `json:"name" yaml:"name"`
-	DocumentCount       int64    `json:"document_count" yaml:"document_count"`
-	AverageDocSizeBytes int64    `json:"average_doc_size_bytes" yaml:"average_doc_size_bytes"`
-	Indexes             []string `json:"indexes" yaml:"indexes"`
-	Fields              []Field  `json:"fields" yaml:"fields"`
+	Name                string `json:"name" yaml:"name"`
+	DocumentCount       int64  `json:"document_count" yaml:"document_count"`
+	AverageDocSizeBytes int64  `json:"average_doc_size_bytes" yaml:"average_doc_size_bytes"`
+	// SizeBytes is the physical collection size, including indexes, when
+	// collStats is available. AverageDocSizeBytes is a sampled logical-data
+	// estimate and is intentionally kept separate.
+	SizeBytes int64    `json:"size_bytes" yaml:"size_bytes"`
+	Indexes   []string `json:"indexes" yaml:"indexes"`
+	Fields    []Field  `json:"fields" yaml:"fields"`
 }
 
 // Field represents a document field with type information
@@ -51,6 +60,7 @@ type ScanOptions struct {
 	URI         string
 	Timeout     time.Duration
 	MaxDocs     int
+	Exhaustive  bool
 	DBFilter    []string
 	Verbose     bool
 	Concurrency int

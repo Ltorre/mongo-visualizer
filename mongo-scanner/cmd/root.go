@@ -17,13 +17,14 @@ import (
 
 var (
 	// Flags
-	uri      string
-	output   string
-	format   string
-	dbFilter string
-	timeout  int
-	verbose  bool
-	maxDocs  int
+	uri        string
+	output     string
+	format     string
+	dbFilter   string
+	timeout    int
+	verbose    bool
+	maxDocs    int
+	exhaustive bool
 )
 
 // rootCmd represents the base command
@@ -54,6 +55,7 @@ func init() {
 	rootCmd.Flags().IntVar(&timeout, "timeout", 10000, "Scan timeout in seconds")
 	rootCmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	rootCmd.Flags().IntVar(&maxDocs, "max-docs", 75000, "Maximum documents to sample per collection")
+	rootCmd.Flags().BoolVar(&exhaustive, "exhaustive", false, "Scan every document in every collection without sampling")
 
 	rootCmd.MarkFlagRequired("uri")
 }
@@ -82,6 +84,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		URI:         uri,
 		Timeout:     time.Duration(timeout) * time.Second,
 		MaxDocs:     maxDocs,
+		Exhaustive:  exhaustive,
 		DBFilter:    dbFilters,
 		Verbose:     verbose,
 		Concurrency: 5,
