@@ -41,6 +41,7 @@ pnpm-lock.yaml
 
 # Scanner outputs (sensitive)
 /mongo-scanner/schema.json
+/mongo-scanner/data/
 
 # Misc
 .cache/
